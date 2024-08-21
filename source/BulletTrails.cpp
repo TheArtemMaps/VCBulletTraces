@@ -4,6 +4,9 @@
 #include "CCamera.h"
 #include "CTxdStore.h"
 #include "RenderBuffer.h"
+#include "CAudioEngine.h"
+#include "CVector.h"
+#include "CGeneral.h"
 #include "ini.h"
 #include <format>
 #define ARRAY_SIZE(array)                (sizeof(array) / sizeof(array[0]))
@@ -15,6 +18,9 @@ float CBulletTraces::thickness[512];
 int CBulletTraces::lifetime[512];
 int CBulletTraces::visibility[512];
 int CBulletTraces::type[512];
+
+static RwIm3DVertex TraceVerticesSA[6];
+static uint16_t TraceIndexListSA[12] = { 4, 1, 3, 1, 0, 3, 0, 2, 3, 3, 2, 5 };
 
 RwIm3DVertex VCTraceVertices[10];
 static RwImVertexIndex VCTraceIndexList[48] = { 0, 5, 7, 0, 7, 2, 0, 7, 5, 0, 2, 7, 0, 4, 9, 0,
@@ -102,8 +108,15 @@ void CBulletTraces::Init(void)
 	VCTraceIndexList[10] = 4;
 	VCTraceIndexList[11] = 5;
 
+	RwIm3DVertexSetRGBA(&TraceVerticesSA[0], 255, 255, 128, 0);
+	RwIm3DVertexSetRGBA(&TraceVerticesSA[1], 255, 255, 128, 0);
+	RwIm3DVertexSetRGBA(&TraceVerticesSA[2], 255, 255, 128, 0);
+	RwIm3DVertexSetRGBA(&TraceVerticesSA[3], 255, 255, 128, 0);
+	RwIm3DVertexSetRGBA(&TraceVerticesSA[4], 255, 255, 128, 0);
+	RwIm3DVertexSetRGBA(&TraceVerticesSA[5], 255, 255, 128, 0);
+
 	//Traces ini load
-	mINI::INIFile file(GAME_PATH((char*)"MODELS\\VCBulletTrails.ini"));
+	mINI::INIFile file(PLUGIN_PATH((char*)"VCBulletTrails.ini"));
 	mINI::INIStructure ini;
 	file.read(ini);
 
@@ -117,7 +130,7 @@ void CBulletTraces::Init(void)
 			i);
 
 		const char* formatted_str2 = formatted_str.c_str();
-
+		
 		std::string strb = ini.get(formatted_str2).get("thickness");
 		const char* strb2 = strb.c_str();
 		std::string strc = ini.get(formatted_str2).get("lifetime");
@@ -149,11 +162,15 @@ void CBulletTraces::AddTrace(CVector* start, CVector* end, float thickness, uint
 		if (aTraces[i].m_bInUse)
 			enabledCount++;
 
+	if (type != TYPE_III || type != TYPE_VC || type != TYPE_SA)
+		type = TYPE_SA;
+
 	switch (type) {
 		case TYPE_III:
 			modifiedLifeTime = 25 + GetRandomNumber() % 32;
 			break;
 		case TYPE_VC:
+		case TYPE_SA:
 			if (enabledCount >= 10)
 				modifiedLifeTime = lifeTime / 4;
 			else if (enabledCount >= 5)
@@ -179,6 +196,8 @@ void CBulletTraces::AddTrace(CVector* start, CVector* end, float thickness, uint
 		aTraces[nextSlot].m_framesInUse = 0;
 		aTraces[nextSlot].m_nLifeTime = modifiedLifeTime;
 	}
+
+	CBulletTraces::ProcessEffects(&aTraces[nextSlot]);
 
 	float startProjFwd = DotProduct(TheCamera.GetForward(), *start - TheCamera.GetPosition());
 	float endProjFwd = DotProduct(TheCamera.GetForward(), *end - TheCamera.GetPosition());
@@ -221,6 +240,22 @@ void CBulletTraces::AddTrace2(CVector* start, CVector* end, int32_t weaponType, 
 		}
 	}
 
+	CVector from = *start;
+	CVector to = *end;
+
+	if (type[weaponType] == TYPE_SA)
+	{
+		CVector dir = *end - *start;
+		const float traceLengthOriginal = dir.Magnitude();
+		dir.Normalise();
+
+		const float traceLengthNew = CGeneral::GetRandomNumberInRange(0.0f, traceLengthOriginal);
+		const float fRadius = std::min(CGeneral::GetRandomNumberInRange(2.0f, 5.0f), traceLengthOriginal - traceLengthNew);
+
+		from = *start + dir * traceLengthNew;
+		to = from + dir * fRadius;
+	}
+
 	/*AddTrace(
 		start,
 		end,
@@ -231,8 +266,8 @@ void CBulletTraces::AddTrace2(CVector* start, CVector* end, int32_t weaponType, 
 	*/
 
 	AddTrace(
-		start,
-		end,
+		&from,
+		&to,
 		thickness[weaponType],
 		lifetime[weaponType],
 		visibility[weaponType],
@@ -257,6 +292,8 @@ void CBulletTraces::Render(void)
 			case TYPE_VC:
 				Render_VC(i);
 				break;
+			case TYPE_SA:
+				Render_SA(i);
 			default:
 				break;
 		}
@@ -300,6 +337,7 @@ void CBulletTrace::Update(void)
 		m_framesInUse++;
 		break;
 	case TYPE_VC:
+	case TYPE_SA:
 		if (CTimer::m_snTimeInMilliseconds - m_nCreationTime >= m_nLifeTime)
 			m_bInUse = false;
 		break;
@@ -484,5 +522,110 @@ void CBulletTraces::Render_VC(int current_slot) {
 	if (RwIm3DTransform(VCTraceVertices, ARRAY_SIZE(VCTraceVertices), nullptr, rwIM3D_VERTEXUV)) {
 		RwIm3DRenderIndexedPrimitive(rwPRIMTYPETRILIST, VCTraceIndexList, ARRAY_SIZE(VCTraceIndexList));
 		RwIm3DEnd();
+	}
+}
+
+void CBulletTraces::Render_SA(int current_slot) {
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, NULL);
+
+		CBulletTrace& trace = aTraces[current_slot];
+		if (!trace.m_bInUse) return;
+
+		const float t = 1.0f - (float)(CTimer::m_snTimeInMilliseconds - trace.m_nCreationTime) / (float)trace.m_nLifeTime;
+
+		CVector camToOriginDir = (trace.m_vecStartPos - TheCamera.GetPosition());
+		camToOriginDir.Normalise();
+
+		CVector direction = trace.m_vecEndPos - trace.m_vecStartPos;
+		direction.Normalise();
+
+		CVector up = aTraces[current_slot].CrossProduct(camToOriginDir, direction);
+		up.Normalise();
+
+		CVector sizeVec = up * (trace.m_fThickness * t);
+		CVector currPosOnTrace = trace.m_vecEndPos - (trace.m_vecEndPos - trace.m_vecStartPos) * t;
+
+		RwIm3DVertexSetPos(&TraceVerticesSA[0], currPosOnTrace.x, currPosOnTrace.y, currPosOnTrace.z);
+		RwIm3DVertexSetPos(&TraceVerticesSA[1], currPosOnTrace.x + sizeVec.x, currPosOnTrace.y + sizeVec.y, currPosOnTrace.z + sizeVec.z);
+		RwIm3DVertexSetPos(&TraceVerticesSA[2], currPosOnTrace.x - sizeVec.x, currPosOnTrace.y - sizeVec.y, currPosOnTrace.z - sizeVec.z);
+		RwIm3DVertexSetPos(&TraceVerticesSA[3], trace.m_vecEndPos.x, trace.m_vecEndPos.y, trace.m_vecEndPos.z);
+		RwIm3DVertexSetPos(&TraceVerticesSA[4], trace.m_vecEndPos.x + sizeVec.x, trace.m_vecEndPos.y + sizeVec.y, trace.m_vecEndPos.z + sizeVec.z);
+		RwIm3DVertexSetPos(&TraceVerticesSA[5], trace.m_vecEndPos.x - sizeVec.x, trace.m_vecEndPos.y - sizeVec.y, trace.m_vecEndPos.z - sizeVec.z);
+
+		RwIm3DVertexSetRGBA(&TraceVerticesSA[3], 255, 255, 128, (RwUInt8)(t * trace.m_fVisibility));
+		
+		if (RwIm3DTransform(TraceVerticesSA, ARRAY_SIZE(TraceVerticesSA), NULL, rwIM3D_VERTEXRGBA))
+		{
+			RwIm3DRenderIndexedPrimitive(rwPRIMTYPETRILIST, TraceIndexListSA, ARRAY_SIZE(TraceIndexListSA));
+			RwIm3DEnd();
+		}
+
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLBACK);
+}
+
+void CBulletTraces::ProcessEffects(CBulletTrace* trace)
+{
+	CMatrix& camMat = TheCamera.m_mCameraMatrix;
+	const CVector& camPos = camMat.GetPosition();
+
+
+	// Make their position relative to the camera's
+	const auto fromRelToCam = trace->m_vecStartPos - camPos;
+	const auto toRelToCam = trace->m_vecEndPos - camPos;
+
+	// Transform both points into the camera's space ((C)cam (S)pace - CS)
+	const float fromCSY = DotProduct(fromRelToCam, camMat.GetForward());
+
+	const float toCSY = DotProduct(toRelToCam, camMat.GetForward());
+
+	if (std::signbit(toCSY) == std::signbit(fromCSY)) { // Originally: toCSY * fromCSY < 0.0f - Check if signs differ
+		return; // Both points are either in front or behind us
+	}
+
+	// They do, in this case points are on opposite sides (one behind, one in front of the camera)
+
+	// Now calculate the remaining coordinates
+	const float fromCSX = DotProduct(fromRelToCam, camMat.GetRight());
+	const float fromCSZ = DotProduct(fromRelToCam, camMat.GetUp());
+
+	const float toCSX = DotProduct(toRelToCam, camMat.GetRight());
+	const float toCSZ = DotProduct(toRelToCam, camMat.GetUp());
+
+	// Calculate distance to point on line that is on the same Y axis as the camera
+	// (This point on line is basically the bullet when passing by the camera)
+
+	// Interpolation on line
+	const float t = fabs(fromCSY) / (fabs(fromCSY) + fabs(toCSY));
+
+	const float pointOnLineZ = fromCSZ + (toCSZ - fromCSZ) * t;
+	const float pointOnLineX = fromCSX + (toCSX - fromCSX) * t;
+
+	// Calculate distance from camera to point on line
+	const float camToLineDist = std::hypotf(pointOnLineZ, pointOnLineX);
+
+	if (camToLineDist >= 2.0f) {
+		return; // Point too far from camera
+	}
+
+	const auto ReportBulletAudio = [&](int event) {
+		const float volDistFactor = 1.0f - camToLineDist * 0.5f;
+		const float volumeChange = volDistFactor == 0.0f ? -100.0f : std::log10(volDistFactor);
+		AudioEngine.ReportFrontendAudioEvent(event, volumeChange, 1.0f);
+		};
+
+	const bool isComingFromBehind = fromCSY <= 0.0f; // Is the bullet coming from behind us?
+	if (0.f <= pointOnLineX) { // Is bullet passing on the right of the camera?
+		ReportBulletAudio(isComingFromBehind ? AE_FRONTEND_BULLET_PASS_RIGHT_REAR : AE_FRONTEND_BULLET_PASS_RIGHT_FRONT);
+	}
+	else { // Bullet passing on left of the camera.
+		ReportBulletAudio(isComingFromBehind ? AE_FRONTEND_BULLET_PASS_LEFT_REAR : AE_FRONTEND_BULLET_PASS_LEFT_FRONT);
 	}
 }

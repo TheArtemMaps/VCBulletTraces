@@ -20,8 +20,9 @@ struct CBulletTrace
 };
 
 enum TraceType {
-	TYPE_III,
-	TYPE_VC
+	TYPE_SA,
+	TYPE_VC,
+	TYPE_III
 };
 
 
@@ -39,6 +40,8 @@ public:
 
 	static void Render_III(int current_slot);
 	static void Render_VC(int current_slot);
+	static void Render_SA(int current_slot);
+	static void ProcessEffects(CBulletTrace* trace);
 
 public:
 	static float thickness[512];
