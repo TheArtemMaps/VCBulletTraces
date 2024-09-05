@@ -145,6 +145,17 @@ void CBulletTraces::Init(void)
 		visibility[i] = std::atoi(strd2);
 		type[i] = std::atoi(stre2);
 
+		// if you read this, please forgive me, I dunno how to fix `null` values if [weap%d] container is empty 
+
+		if (thickness[i] == 0)
+			thickness[i] = 0.01;
+
+		if (lifetime[i] == 0)
+			lifetime[i] = 300;
+
+		if (visibility[i] == 0)
+			visibility[i] = 70;
+
 	}
 
 }
@@ -162,23 +173,19 @@ void CBulletTraces::AddTrace(CVector* start, CVector* end, float thickness, uint
 		if (aTraces[i].m_bInUse)
 			enabledCount++;
 
-	if (type != TYPE_III || type != TYPE_VC || type != TYPE_SA)
-		type = TYPE_SA;
-
 	switch (type) {
 		case TYPE_III:
 			modifiedLifeTime = 25 + GetRandomNumber() % 32;
 			break;
 		case TYPE_VC:
 		case TYPE_SA:
+		default:
 			if (enabledCount >= 10)
 				modifiedLifeTime = lifeTime / 4;
 			else if (enabledCount >= 5)
 				modifiedLifeTime = lifeTime / 2;
 			else
 				modifiedLifeTime = lifeTime;
-			break;
-		default:
 			break;
 	}
 
@@ -293,8 +300,8 @@ void CBulletTraces::Render(void)
 				Render_VC(i);
 				break;
 			case TYPE_SA:
-				Render_SA(i);
 			default:
+				Render_SA(i);
 				break;
 		}
 	}
@@ -338,10 +345,9 @@ void CBulletTrace::Update(void)
 		break;
 	case TYPE_VC:
 	case TYPE_SA:
+	default:
 		if (CTimer::m_snTimeInMilliseconds - m_nCreationTime >= m_nLifeTime)
 			m_bInUse = false;
-		break;
-	default:
 		break;
 	}
 }
