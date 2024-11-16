@@ -20,9 +20,11 @@ struct CBulletTrace
 };
 
 enum TraceType {
-	TYPE_SA,
+	TYPE_NONE = -1,
+	TYPE_III,
 	TYPE_VC,
-	TYPE_III
+	TYPE_SA,
+	TYPE_STORIES
 };
 
 

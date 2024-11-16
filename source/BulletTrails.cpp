@@ -36,9 +36,9 @@ void CBulletTraces::Init(void)
 	for (int i = 0; i < 255; i++)
 		aTraces[i].m_bInUse = false;
 	CTxdStore::PushCurrentTxd();
-	int32_t slot2 = CTxdStore::AddTxdSlot("VCBulletTrails");
-	CTxdStore::LoadTxd(slot2, GAME_PATH((char*)"MODELS\\VCBULLETTRAILS.TXD"));
-	int32_t slot = CTxdStore::FindTxdSlot("VCBulletTrails");
+	int32_t slot2 = CTxdStore::AddTxdSlot("BulletTrails");
+	CTxdStore::LoadTxd(slot2, GAME_PATH((char*)"MODELS\\BULLETTRAILS.TXD"));
+	int32_t slot = CTxdStore::FindTxdSlot("BulletTrails");
 	CTxdStore::SetCurrentTxd(slot);
 	gpSmokeTrailTexture = RwTextureRead("smoketrail", NULL);
 	gpTraceTexture = RwTextureRead("3trace", NULL);
@@ -108,6 +108,7 @@ void CBulletTraces::Init(void)
 	VCTraceIndexList[10] = 4;
 	VCTraceIndexList[11] = 5;
 
+	// SA & Stories
 	RwIm3DVertexSetRGBA(&TraceVerticesSA[0], 255, 255, 128, 0);
 	RwIm3DVertexSetRGBA(&TraceVerticesSA[1], 255, 255, 128, 0);
 	RwIm3DVertexSetRGBA(&TraceVerticesSA[2], 255, 255, 128, 0);
@@ -116,7 +117,7 @@ void CBulletTraces::Init(void)
 	RwIm3DVertexSetRGBA(&TraceVerticesSA[5], 255, 255, 128, 0);
 
 	//Traces ini load
-	mINI::INIFile file(PLUGIN_PATH((char*)"VCBulletTrails.ini"));
+	mINI::INIFile file(PLUGIN_PATH((char*)"BulletTrails.ini"));
 	mINI::INIStructure ini;
 	file.read(ini);
 
@@ -144,17 +145,6 @@ void CBulletTraces::Init(void)
 		lifetime[i] = std::atoi(strc2);
 		visibility[i] = std::atoi(strd2);
 		type[i] = std::atoi(stre2);
-
-		// if you read this, please forgive me, I dunno how to fix `null` values if [weap%d] container is empty 
-
-		if (thickness[i] == 0)
-			thickness[i] = 0.01;
-
-		if (lifetime[i] == 0)
-			lifetime[i] = 300;
-
-		if (visibility[i] == 0)
-			visibility[i] = 70;
 
 	}
 
@@ -300,6 +290,7 @@ void CBulletTraces::Render(void)
 				Render_VC(i);
 				break;
 			case TYPE_SA:
+			case TYPE_STORIES:
 			default:
 				Render_SA(i);
 				break;
@@ -542,7 +533,9 @@ void CBulletTraces::Render_SA(int current_slot) {
 		CBulletTrace& trace = aTraces[current_slot];
 		if (!trace.m_bInUse) return;
 
-		const float t = 1.0f - (float)(CTimer::m_snTimeInMilliseconds - trace.m_nCreationTime) / (float)trace.m_nLifeTime;
+		float t = (float)(CTimer::m_snTimeInMilliseconds - trace.m_nCreationTime) / (float)trace.m_nLifeTime;
+		if (trace.type != TYPE_STORIES)
+			t = 1.0f - t;
 
 		CVector camToOriginDir = (trace.m_vecStartPos - TheCamera.GetPosition());
 		camToOriginDir.Normalise();
@@ -554,7 +547,12 @@ void CBulletTraces::Render_SA(int current_slot) {
 		up.Normalise();
 
 		CVector sizeVec = up * (trace.m_fThickness * t);
-		CVector currPosOnTrace = trace.m_vecEndPos - (trace.m_vecEndPos - trace.m_vecStartPos) * t;
+		CVector currPosOnTrace;
+
+		if (trace.type == TYPE_STORIES)
+			currPosOnTrace = trace.m_vecEndPos - (trace.m_vecEndPos - trace.m_vecStartPos);
+		else
+			currPosOnTrace = trace.m_vecEndPos - (trace.m_vecEndPos - trace.m_vecStartPos) * t;
 
 		RwIm3DVertexSetPos(&TraceVerticesSA[0], currPosOnTrace.x, currPosOnTrace.y, currPosOnTrace.z);
 		RwIm3DVertexSetPos(&TraceVerticesSA[1], currPosOnTrace.x + sizeVec.x, currPosOnTrace.y + sizeVec.y, currPosOnTrace.z + sizeVec.z);
@@ -563,7 +561,19 @@ void CBulletTraces::Render_SA(int current_slot) {
 		RwIm3DVertexSetPos(&TraceVerticesSA[4], trace.m_vecEndPos.x + sizeVec.x, trace.m_vecEndPos.y + sizeVec.y, trace.m_vecEndPos.z + sizeVec.z);
 		RwIm3DVertexSetPos(&TraceVerticesSA[5], trace.m_vecEndPos.x - sizeVec.x, trace.m_vecEndPos.y - sizeVec.y, trace.m_vecEndPos.z - sizeVec.z);
 
-		RwIm3DVertexSetRGBA(&TraceVerticesSA[3], 255, 255, 128, (RwUInt8)(t * trace.m_fVisibility));
+		switch (trace.type) {
+		case TYPE_STORIES:
+			for (int i = 0; i < 6; i++)
+				RwIm3DVertexSetRGBA(&TraceVerticesSA[i], 255, 140, 0, (RwUInt8)(t * trace.m_fVisibility));
+			break;
+		case TYPE_SA:
+		default:
+			for (int i = 0; i < 6; i++) {
+				RwIm3DVertexSetRGBA(&TraceVerticesSA[i], 255, 255, 128, 0);
+			}
+			RwIm3DVertexSetRGBA(&TraceVerticesSA[3], 255, 255, 128, (RwUInt8)(t * trace.m_fVisibility));
+			break;
+		}
 		
 		if (RwIm3DTransform(TraceVerticesSA, ARRAY_SIZE(TraceVerticesSA), NULL, rwIM3D_VERTEXRGBA))
 		{
