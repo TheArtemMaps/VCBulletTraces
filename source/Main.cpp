@@ -13,7 +13,7 @@ public:
         movingThingsEvent += []() {
             CBulletTraces::Render();
         };
-        plugin::Events::gameProcessEvent += []() {
+        plugin::Events::processScriptsEvent += []() {
             CBulletTraces::Update();
         };
         plugin::Events::shutdownRwEvent += []() {
